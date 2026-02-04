@@ -1,0 +1,48 @@
+<%- include("../common/head.ejs") %>
+<%- include("../common/navbar.ejs") %>
+
+<div class="flex justify-center items-center h-full my-20">
+  <div class="bg-white rounded-lg shadow-lg p-8 max-w-md w-full border border-gray-100">
+    <h1 class="text-2xl font-bold mb-6 text-center text-indigo-500">Driver Login</h1>
+    <form id="driverLoginForm">
+      <div class="mb-4">
+        <label for="email" class="block text-gray-700 font-bold mb-2">Email:</label>
+        <input type="email" id="email" name="email" required
+          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring focus:ring-blue-200">
+      </div>
+      <div class="mb-6">
+        <label for="password" class="block text-gray-700 font-bold mb-2">Password:</label>
+        <input type="password" id="password" name="password" required
+          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring focus:ring-blue-200">
+      </div>
+      <div class="flex justify-center">
+        <button type="submit"
+          class="bg-indigo-500 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-full">Login</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  document.getElementById('driverLoginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    
+    try {
+      const data = await apiRequest('/driver/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+      if (data.success) {
+        window.location.href = '/driver-dashboard';
+      }
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+</script>
+
+<%- include("../common/footer.ejs") %>
+</body>
+</html>

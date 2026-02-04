@@ -1,0 +1,28 @@
+{
+  "name": "waste-management-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Waste Management System",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "npx nodemon app.js",
+    "init-db": "node init-db.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Saurabh Jaiswal",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "jsonwebtoken": "^9.0.2",
+    "sqlite3": "^5.1.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}
