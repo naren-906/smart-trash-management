@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const app = express();
@@ -5,6 +6,9 @@ const app = express();
 // Set up view engine
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "public/views"));
+
+// Pass API_BASE_URL to all views
+app.locals.API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000/api';
 
 // Serve static files
 app.use(express.static(path.join(__dirname, "public")));

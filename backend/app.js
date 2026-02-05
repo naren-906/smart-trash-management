@@ -10,7 +10,7 @@ const indexRoutes = require("./routes/index");
 _db.connectToServer();
 
 app.use(cors({
-  origin: "http://localhost:8080", // Frontend URL
+  origin: process.env.FRONTEND_URL || "http://localhost:3000", // Adjusted to match frontend port 3000
   credentials: true
 }));
 app.use(express.json());
