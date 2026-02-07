@@ -1,14 +1,13 @@
-const _db = require("../config/db");
+const db = require("../config/db");
 const bcrypt = require("../utils/bcrypt");
 const jwt = require("../utils/jwt");
 require("dotenv").config();
 
 exports.loginDriver = async (req, res) => {
   let { email, password } = req.body;
-  let db = _db.getDb();
   
   try {
-    let result = await db.get("SELECT id, password, name FROM drivers WHERE email = ?", [email]);
+    let result = await db.drivers.findOne({ email });
 
     if (!result) {
       return res.status(401).json({ success: false, message: "Wrong email or password" });
@@ -16,7 +15,8 @@ exports.loginDriver = async (req, res) => {
       let isPasswordOk = bcrypt.comparePassword(password, result.password);
 
       if (isPasswordOk) {
-        let access_token = jwt.sign({ id: result.id, role: "driver", email: email }, process.env.jwt_secret);
+        let driverId = result.id || result._id;
+        let access_token = jwt.sign({ id: driverId, role: "driver", email: email }, process.env.jwt_secret);
         res.cookie("accesstoken", access_token, { httpOnly: true });
         return res.json({ 
           success: true, 
@@ -35,12 +35,7 @@ exports.loginDriver = async (req, res) => {
 
 exports.getDriverDashboard = async (req, res) => {
   try {
-    let db = _db.getDb();
-    
-    let result = await db.all(
-      "SELECT request_type, status FROM requests WHERE assignedDriverId = ?",
-      [req.driverId]
-    );
+    let result = await db.requests.find({ assignedDriverId: req.driverId });
 
     let stats = {
       total_requests: result.length,
@@ -60,12 +55,8 @@ exports.getDriverDashboard = async (req, res) => {
 };
 
 exports.getPendingRequests = async (req, res) => {
-  let db = _db.getDb();
   try {
-    let result = await db.all(
-      "SELECT id, user_number, request_type, quantity, address FROM requests WHERE assignedDriverId = ? AND status = ?",
-      [req.driverId, "pending"]
-    );
+    let result = await db.requests.find({ assignedDriverId: req.driverId, status: "pending" });
     return res.json({ success: true, requests: result });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -74,13 +65,16 @@ exports.getPendingRequests = async (req, res) => {
 
 exports.resolveRequest = async (req, res) => {
   let requestId = req.query.requestId;
-  let db = _db.getDb();
 
   try {
-    await db.run(
-      "UPDATE requests SET status = ? WHERE id = ? AND assignedDriverId = ?",
-      ["resolved", requestId, req.driverId]
+    await db.requests.updateOne(
+      { id: requestId, assignedDriverId: req.driverId },
+      { status: "resolved" }
     );
+    // Fallback for Mongo
+    if (db.type === 'mongo_db') {
+        await db.requests.updateOne({ _id: requestId, assignedDriverId: req.driverId }, { status: "resolved" });
+    }
     return res.json({ success: true, message: "Request resolved successfully" });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -89,13 +83,16 @@ exports.resolveRequest = async (req, res) => {
 
 exports.rejectRequest = async (req, res) => {
   let requestId = req.query.requestId;
-  let db = _db.getDb();
 
   try {
-    await db.run(
-      "UPDATE requests SET status = ? WHERE id = ? AND assignedDriverId = ?",
-      ["rejected", requestId, req.driverId]
+    await db.requests.updateOne(
+      { id: requestId, assignedDriverId: req.driverId },
+      { status: "rejected" }
     );
+    // Fallback for Mongo
+    if (db.type === 'mongo_db') {
+        await db.requests.updateOne({ _id: requestId, assignedDriverId: req.driverId }, { status: "rejected" });
+    }
     return res.json({ success: true, message: "Request rejected successfully" });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -104,11 +101,7 @@ exports.rejectRequest = async (req, res) => {
 
 exports.getRequestHistory = async (req, res) => {
   try {
-    let db = _db.getDb();
-    let result = await db.all(
-      "SELECT * FROM requests WHERE assignedDriverId = ? ORDER BY id DESC",
-      [req.driverId]
-    );
+    let result = await db.requests.find({ assignedDriverId: req.driverId });
     return res.json({ success: true, requests: result });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });

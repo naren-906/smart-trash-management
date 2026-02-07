@@ -20,6 +20,8 @@
     "express": "^4.19.2",
     "express-session": "^1.18.0",
     "jsonwebtoken": "^9.0.2",
+    "mongodb": "^7.1.0",
+    "mongoose": "^9.1.6",
     "sqlite3": "^5.1.6"
   },
   "devDependencies": {

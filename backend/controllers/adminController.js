@@ -1,5 +1,5 @@
 const bcrypt = require("bcrypt");
-const _db = require("../config/db");
+const db = require("../config/db");
 const jwt = require("../utils/jwt");
 require("dotenv").config();
 
@@ -18,12 +18,10 @@ exports.loginAdmin = (req, res) => {
 };
 
 exports.getAdminDashboard = async (req, res) => {
-    let db = _db.getDb();
-
     try {
-        let result = await db.all("SELECT request_type, status, assignedDriver FROM requests");
-        let driverData = await db.all("SELECT vehicle_type FROM drivers");
-        let userData = await db.all("SELECT name FROM users");
+        let result = await db.requests.find();
+        let driverData = await db.drivers.find();
+        let userData = await db.users.find();
 
         const stats = {
             total_requests: result.length,
@@ -36,10 +34,10 @@ exports.getAdminDashboard = async (req, res) => {
             total_unassigned_driver_requests: result.filter((item) => !item.assignedDriver || item.assignedDriver === "").length,
             total_users: userData.length,
             total_drivers: driverData.length,
-            total_trucks: driverData.filter((item) => item.vehicle_type.toLowerCase() === "truck").length,
-            total_cars: driverData.filter((item) => item.vehicle_type.toLowerCase() === "car").length,
-            total_van: driverData.filter((item) => item.vehicle_type.toLowerCase() === "van").length,
-            total_motorcycle: driverData.filter((item) => item.vehicle_type.toLowerCase() === "motorcycle").length,
+            total_trucks: driverData.filter((item) => item.vehicle_type && item.vehicle_type.toLowerCase() === "truck").length,
+            total_cars: driverData.filter((item) => item.vehicle_type && item.vehicle_type.toLowerCase() === "car").length,
+            total_van: driverData.filter((item) => item.vehicle_type && item.vehicle_type.toLowerCase() === "van").length,
+            total_motorcycle: driverData.filter((item) => item.vehicle_type && item.vehicle_type.toLowerCase() === "motorcycle").length,
         };
 
         return res.json({ success: true, stats });
@@ -50,12 +48,10 @@ exports.getAdminDashboard = async (req, res) => {
 };
 
 exports.getAllRequests = async (req, res) => {
-    let db = _db.getDb();
-
     try {
-        let allDrivers = await db.all("SELECT id, name FROM drivers");
-        let result = await db.all("SELECT * FROM requests");
-        return res.json({ success: true, requests: result.reverse(), drivers: allDrivers });
+        let allDrivers = await db.drivers.find();
+        let result = await db.requests.find();
+        return res.json({ success: true, requests: result, drivers: allDrivers });
     } catch (err) {
         console.error(err);
         return res.status(500).json({ success: false, message: "Error loading requests" });
@@ -64,19 +60,24 @@ exports.getAllRequests = async (req, res) => {
 
 exports.assignDriver = async (req, res) => {
     let { driverId, requestId } = req.query;
-    let db = _db.getDb();
 
     try {
-        let driver = await db.get("SELECT name FROM drivers WHERE id = ?", [driverId]);
+        // Query by id (handles both Mongo and SQLite)
+        let driver = await db.drivers.findOne({ id: driverId });
+        if (!driver) driver = await db.drivers.findOne({ _id: driverId }); // For Mongo
         
         if (!driver) {
             return res.status(404).json({ success: false, message: "Driver not found" });
         }
 
-        await db.run(
-            "UPDATE requests SET assignedDriver = ?, assignedDriverId = ? WHERE id = ?",
-            [driver.name, driverId, requestId]
+        await db.requests.updateOne(
+            { id: requestId }, // Will handle both ID types if possible
+            { assignedDriver: driver.name, assignedDriverId: driverId }
         );
+        // Fallback for Mongo if requestId is _id
+        if (db.type === 'mongo_db') {
+            await db.requests.updateOne({ _id: requestId }, { assignedDriver: driver.name, assignedDriverId: driverId });
+        }
 
         return res.json({
             success: true,
@@ -84,18 +85,21 @@ exports.assignDriver = async (req, res) => {
             driverName: driver.name,
         });
     } catch (err) {
+        console.error(err);
         return res.status(500).json({ success: false, message: "Something went wrong" });
     }
 };
 
 exports.unassignDriver = async (req, res) => {
     let requestId = req.query.requestId;
-    let db = _db.getDb();
     try {
-        await db.run(
-            "UPDATE requests SET assignedDriver = NULL, assignedDriverId = NULL WHERE id = ?",
-            [requestId]
+        await db.requests.updateOne(
+            { id: requestId },
+            { assignedDriver: null, assignedDriverId: null }
         );
+        if (db.type === 'mongo_db') {
+            await db.requests.updateOne({ _id: requestId }, { assignedDriver: null, assignedDriverId: null });
+        }
         
         return res.json({
             success: true,
@@ -108,12 +112,14 @@ exports.unassignDriver = async (req, res) => {
 
 exports.rejectRequest = async (req, res) => {
     let requestId = req.query.requestId;
-    let db = _db.getDb();
     try {
-        await db.run(
-            "UPDATE requests SET status = ?, assignedDriver = NULL, assignedDriverId = NULL WHERE id = ?",
-            ["rejected", requestId]
+        await db.requests.updateOne(
+            { id: requestId },
+            { status: "rejected", assignedDriver: null, assignedDriverId: null }
         );
+        if (db.type === 'mongo_db') {
+            await db.requests.updateOne({ _id: requestId }, { status: "rejected", assignedDriver: null, assignedDriverId: null });
+        }
 
         return res.json({
             success: true,
@@ -125,14 +131,11 @@ exports.rejectRequest = async (req, res) => {
 };
 
 exports.createDriver = async (req, res) => {
-    let db = _db.getDb();
     let body = req.body;
 
     try {
-        let isExistingUser = await db.get(
-            "SELECT id FROM drivers WHERE email = ? OR number = ?",
-            [body.email, body.number]
-        );
+        let isExistingUser = await db.drivers.findOne({ email: body.email });
+        if (!isExistingUser) isExistingUser = await db.drivers.findOne({ number: body.number });
 
         if (isExistingUser) {
             return res.status(400).json({ success: false, message: "Email or phone already registered" });
@@ -142,10 +145,16 @@ exports.createDriver = async (req, res) => {
             } else {
                 let hashedPassword = bcrypt.hashSync(body.password, 10);
                 
-                await db.run(
-                    "INSERT INTO drivers (name, email, number, password, vehicle_number, vehicle_type, capacity) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    [body.name, body.email, body.number, hashedPassword, body.vehicle_number, body.vehicle_type, body.capacity || 0]
-                );
+                await db.drivers.create({
+                    name: body.name,
+                    email: body.email,
+                    number: body.number,
+                    password: hashedPassword,
+                    vehicle_number: body.vehicle_number,
+                    vehicle_type: body.vehicle_type,
+                    capacity: body.capacity || 0,
+                    status: 'available'
+                });
                 return res.json({ success: true, message: "Driver Created" });
             }
         }
@@ -156,8 +165,7 @@ exports.createDriver = async (req, res) => {
 
 exports.getAllDrivers = async (req, res) => {
     try {
-        let db = _db.getDb();
-        let result = await db.all("SELECT id, name, email, number, vehicle_number, vehicle_type, capacity, status FROM drivers");
+        let result = await db.drivers.find();
         return res.json({ success: true, drivers: result });
     } catch (err) {
         return res.status(500).json({ success: false, message: err.message });
@@ -167,8 +175,10 @@ exports.getAllDrivers = async (req, res) => {
 exports.deleteDriver = async (req, res) => {
     try {
         let driverId = req.query.driverId;
-        let db = _db.getDb();
-        await db.run("DELETE FROM drivers WHERE id = ?", [driverId]);
+        await db.drivers.deleteOne({ id: driverId });
+        if (db.type === 'mongo_db') {
+            await db.drivers.deleteOne({ _id: driverId });
+        }
         return res.json({ success: true, message: "Driver deleted successfully" });
     } catch (err) {
         return res.status(500).json({ success: false, message: "Something went wrong from server side" });
